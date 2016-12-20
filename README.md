@@ -1,2 +1,2 @@
 # wolf
-WSGI Objects and Linking Framework
+WSGI Objects Linking Framework
