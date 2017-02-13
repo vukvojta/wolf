@@ -88,10 +88,7 @@ class Router(object):
             try:
                 controller = route[environ['REQUEST_METHOD']]
             except KeyError:
-                try:
-                    controller = route[None]
-                except KeyError:
-                    return error_handler(environ, start_response, '405 Method Not Allowed')
+                return error_handler(environ, start_response, '405 Method Not Allowed')
             output = controller(environ, start_response)
             if output is not None:
                 return output
@@ -266,6 +263,7 @@ def controller(a=None, m=None):
         content_type = a
 
     def decorate(f):
+        @wraps(f)
         def ctrl(environ, start_response):
             try:
                 error_handler = environ['ERROR_HANDLER']
