@@ -10,6 +10,32 @@ from urlparse import parse_qs
 from urllib import urlencode
 from jinja2 import Environment, FileSystemLoader
 
+"""
+error page
+debug report
+"""
+
+"""
+support methods
+HEAD
+OPTIONS
+"""
+
+
+"""
+Authentication fills:
+AUTH_TYPE
+REMOTE_USER
+
+Authorization returns groups based on REMOTE_USER
+SQL 'WITH RECURSIVE' query
+
+Every controller lists authorized groups (maybe allow/deny ?) in decorator
+and returns
+'401 Unauthorized' if not logged in OR offer authentication
+'403 Forbidden' if logged in and denied
+"""
+
 
 def default_error_handler(environ, start_response, status):
     output = 'E R R O R'
@@ -19,6 +45,16 @@ def default_error_handler(environ, start_response, status):
     start_response(status, headers, sys.exc_info())
     return [output]
 
+def env(environ, start_response):
+    output = []
+    for k in environ.keys():
+        output.append("=".join([k, str(environ[k])]))
+    output = "\n".join(output).encode('utf-8')
+    status = "200 OK"
+    headers = [('Content-Type', 'text/plain;charset=UTF-8'),
+               ('Content-Length', str(len(output)))]
+    start_response(status, headers, sys.exc_info())
+    return [output]
 
 class Router(object):
     def __init__(self, *args):
