@@ -258,6 +258,12 @@ def get_client_address(environ):
 
 
 def controller(a=None, m=None):
+    """ Serve GET, POST and RegEx data as function arguments
+
+        without parentheses uses default values
+        a, alternative content-type
+        m, dictionary where keys are decorated function arguments and values are environment variables
+    """
     content_type = 'text/html'
     if isinstance(a, basestring):
         content_type = a
