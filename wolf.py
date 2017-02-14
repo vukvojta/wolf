@@ -257,12 +257,12 @@ def get_client_address(environ):
         return environ['REMOTE_ADDR']
 
 
-def controller(a=None, m=None):
+def controller(a=None):
     """ Serve GET, POST and RegEx data as function arguments
 
+        argument starting with underscore are taken from environment
         without parentheses uses default values
         a, alternative content-type
-        m, dictionary where keys are decorated function arguments and values are environment variables
     """
     content_type = 'text/html'
     if isinstance(a, basestring):
@@ -287,8 +287,8 @@ def controller(a=None, m=None):
             if f.__defaults__ is not None:
                 defaults -= len(f.__defaults__)
             for i, arg in enumerate(f.__code__.co_varnames):
-                if m is not None and arg in m:
-                    args[arg] = environ[m[arg]]
+                if arg[0]=='_' and arg[1:].upper() in environ:
+                    args[arg] = environ[arg[1:].upper()]
                 elif arg in data_url:
                     args[arg] = data_url[arg][0]
                 elif environ['REQUEST_METHOD'] == 'POST' and arg in data_post:
