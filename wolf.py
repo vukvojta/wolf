@@ -21,7 +21,6 @@ HEAD
 OPTIONS
 """
 
-
 """
 Authentication fills:
 AUTH_TYPE
@@ -45,16 +44,17 @@ def default_error_handler(environ, start_response, status):
     start_response(status, headers, sys.exc_info())
     return [output]
 
+
 def env(environ, start_response):
+    """ Show environment variables """
     output = []
-    for k in environ.keys():
-        output.append("=".join([k, str(environ[k])]))
+    for key, value in environ.iteritems():
+        output.append('{0} = {1}'.format(key, value))
     output = "\n".join(output).encode('utf-8')
-    status = "200 OK"
-    headers = [('Content-Type', 'text/plain;charset=UTF-8'),
-               ('Content-Length', str(len(output)))]
-    start_response(status, headers, sys.exc_info())
+    start_response('200 OK', [('Content-type', 'text/plain;charset=UTF-8'),
+                              ('Content-Length', str(len(output)))])
     return [output]
+
 
 class Router(object):
     def __init__(self, *args):
@@ -287,7 +287,7 @@ def controller(a=None):
             if f.__defaults__ is not None:
                 defaults -= len(f.__defaults__)
             for i, arg in enumerate(f.__code__.co_varnames):
-                if arg[0]=='_' and arg[1:].upper() in environ:
+                if arg[0] == '_' and arg[1:].upper() in environ:
                     args[arg] = environ[arg[1:].upper()]
                 elif arg in data_url:
                     args[arg] = data_url[arg][0]
@@ -353,10 +353,12 @@ def dbsession(session_obj):
 
     return decorate
 
+
 class Link(object):
     def __init__(self, text, url):
         self.text = text
         self.url = url
+
 
 class Paging(object):
     def __init__(self, rows, perpage, page, link):
