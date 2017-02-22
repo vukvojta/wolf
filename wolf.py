@@ -56,7 +56,11 @@ def env(environ, start_response):
     return [output]
 
 
-class Router(object):
+class WSGI(object):
+    pass
+
+
+class Router(WSGI):
     def __init__(self, *args):
         self.routes = []
         for route in args:
@@ -142,7 +146,7 @@ class Router(object):
         return "\n".join(ret)
 
 
-class Static(object):
+class Static(WSGI):
     block_size = 1024
     types = {'.ico': 'image/x-icon',
              '.gif': 'image/gif',
@@ -185,19 +189,49 @@ class Static(object):
             return
 
 
-def redirect(start_response, status, url, headers=None):
-    if headers is None:
-        headers = []
-    output = 'R E D I R E C T'
-    output = output.encode('utf-8')
-    headers.append(('Location', url))
-    start_response(status, headers)
-    return [output]
+class Response(WSGI):
+    def __init__(self, status='404 Not Found', output='ERROR'):
+        self._status = status
+        self._headers = {'Content-Type': 'text/plain;charset=UTF-8'}
+        self._output = output
+
+    def headers(self, **kwargs):
+        self._headers.update(kwargs)
+        return self
+
+    def redirect(self, url, status='301 Moved Permanently'):
+        self._status = status
+        self._headers['Location'] = url
+        self._output = 'REDIRECT'
+        return self
+
+    def template(self, name, status='200 OK', **kwargs):
+        scriptname = inspect.getfile(sys._getframe(1))
+        scriptpath = os.path.dirname(os.path.realpath(scriptname))
+
+        loader = FileSystemLoader(searchpath=scriptpath)
+        environment = Environment(loader=loader, trim_blocks=True, lstrip_blocks=True)
+
+        template = environment.get_template(name)
+        self._status = status
+        self._headers['Content-Type'] ='text/html;charset=UTF-8'
+        self._output = template.render(**kwargs)
+        return self
+
+    def __call__(self, environ, start_response):
+        if 'Location' in self._headers:
+            self._headers['Location'] += "?" + environ['QUERY_STRING']
+        self._output = self._output.encode('utf-8')
+        self._headers['Content-Length'] = str(len(self._output))
+        start_response(self._status, self._headers.items())
+        return [self._output]
 
 
-class Redirect(object):
-    def __init__(self, url):
+class Redirect(WSGI):
+    def __init__(self, url, status='301 Moved Permanently', headers=None):
         self.url = url
+        self.status = status
+        self.headers = headers
 
     def __call__(self, environ, start_response):
         output = 'R E D I R E C T'
@@ -205,9 +239,13 @@ class Redirect(object):
         url = self.url
         if len(environ['QUERY_STRING']) > 0:
             url += "?" + environ['QUERY_STRING']
-        start_response('301 Moved Permanently', [('Location', url),
-                                                 ('Content-type', 'text/plain'),
-                                                 ('Content-Length', str(len(output)))])
+        headers = [('Location', url),
+                   ('Content-type', 'text/plain'),
+                   ('Content-Length', str(len(output)))
+                   ]
+        if self.headers:
+            headers.extend(self.headers)
+        start_response(self.status, headers)
         return [output]
 
 
@@ -218,8 +256,7 @@ class Template(object):
         searchpath = os.path.realpath(os.path.join(scriptpath, templates))
 
         loader = FileSystemLoader(searchpath=searchpath)
-        self.environment = Environment(loader=loader,
-                                       trim_blocks=True, lstrip_blocks=True)
+        self.environment = Environment(loader=loader, trim_blocks=True, lstrip_blocks=True)
 
     def render_and_respond(self, start_response, template_name, status='200 OK',
                            content_type='text/html;charset=UTF-8', **kwargs):
@@ -299,7 +336,9 @@ def controller(a=None):
                     # Missing argument which is not default
                     return error_handler(environ, start_response, '404 Not Found')
             output = f(**args)
-            if output is not None:
+            if isinstance(output, WSGI):
+                return output(environ, start_response)
+            elif isinstance(output, basestring):
                 start_response('200 OK', [('Content-type', content_type),
                                           ('Content-Length', str(len(output)))])
                 return [output]
@@ -314,7 +353,7 @@ def controller(a=None):
         return decorate
 
 
-class DBSession(object):
+class DBSession(WSGI):
     def __init__(self, controller, session_obj):
         self.controller = controller
         self.session_obj = session_obj
