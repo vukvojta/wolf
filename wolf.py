@@ -35,6 +35,10 @@ and returns
 '403 Forbidden' if logged in and denied
 """
 
+PROJECT_DIR = os.path.dirname(os.path.realpath(inspect.getfile(sys._getframe(2))))
+loader = FileSystemLoader(searchpath=PROJECT_DIR)
+environment = Environment(loader=loader, trim_blocks=True, lstrip_blocks=True)
+
 
 def default_error_handler(environ, start_response, status):
     output = 'E R R O R'
@@ -122,14 +126,11 @@ class Router(WSGI):
             rl = r
         self.pattern = re.compile('|'.join(routes))
 
-    def route(self, url, method=None):
+    def route(self, url, methods=['GET']):
         assert isinstance(url, basestring), "route decorator needs url parameter"
 
         def decorate(function):
-            if method is None:
-                self.append(function, url)
-            else:
-                self.append(function, url, method)
+            self.append(function, url, methods)
             return function
 
         return decorate
@@ -206,22 +207,26 @@ class Response(WSGI):
         return self
 
     def template(self, name, status='200 OK', **kwargs):
-        scriptname = inspect.getfile(sys._getframe(1))
-        scriptpath = os.path.dirname(os.path.realpath(scriptname))
-
-        loader = FileSystemLoader(searchpath=scriptpath)
-        environment = Environment(loader=loader, trim_blocks=True, lstrip_blocks=True)
 
         template = environment.get_template(name)
         self._status = status
-        self._headers['Content-Type'] ='text/html;charset=UTF-8'
-        self._output = template.render(**kwargs)
+        self._headers['Content-Type'] = 'text/html;charset=UTF-8'
+        self._output = template.render(**kwargs).encode('utf-8')
+        return self
+
+    def output(self, output, status='200 OK'):
+        self._status = status
+        self._headers = {'Content-Type': 'text/plain;charset=UTF-8'}
+        self._output = output
+        return self
+
+    def content(self, content_type):
+        self._headers['Content-Type'] = content_type
         return self
 
     def __call__(self, environ, start_response):
         if 'Location' in self._headers:
             self._headers['Location'] += "?" + environ['QUERY_STRING']
-        self._output = self._output.encode('utf-8')
         self._headers['Content-Length'] = str(len(self._output))
         start_response(self._status, self._headers.items())
         return [self._output]
@@ -301,7 +306,7 @@ def controller(a=None):
         without parentheses uses default values
         a, alternative content-type
     """
-    content_type = 'text/html'
+    content_type = 'text/plain;charset=UTF-8'
     if isinstance(a, basestring):
         content_type = a
 
