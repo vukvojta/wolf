@@ -36,7 +36,7 @@ and returns
 """
 
 PROJECT_DIR = os.path.dirname(os.path.realpath(inspect.getfile(sys._getframe(2))))
-loader = FileSystemLoader(searchpath=PROJECT_DIR)
+loader = FileSystemLoader(searchpath=os.path.join(PROJECT_DIR, 'templates'))
 environment = Environment(loader=loader, trim_blocks=True, lstrip_blocks=True)
 
 
@@ -61,10 +61,16 @@ def env(environ, start_response):
 
 
 class WSGI(object):
+    def __call__(self, environ, start_response):
+        raise Exception
+        "__call__ method has to be overridden"
+
+
+class WSGImiddle(WSGI):
     pass
 
 
-class Router(WSGI):
+class Router(WSGImiddle):
     def __init__(self, *args):
         self.routes = []
         for route in args:
@@ -139,7 +145,7 @@ class Router(WSGI):
         ret = []
         for r in self.routes:
             for m, ro in r[1].iteritems():
-                if isinstance(ro, Router):
+                if isinstance(ro, WSGImiddle):
                     for rr in ro.__str__().split("\n"):
                         ret.append(r[0] + rr)
                 else:
@@ -207,7 +213,6 @@ class Response(WSGI):
         return self
 
     def template(self, name, status='200 OK', **kwargs):
-
         template = environment.get_template(name)
         self._status = status
         self._headers['Content-Type'] = 'text/html;charset=UTF-8'
@@ -319,7 +324,7 @@ def controller(a=None):
                 error_handler = default_error_handler
             data_get = parse_qs(environ['QUERY_STRING'])
             if environ['REQUEST_METHOD'] == 'POST':
-                data_post = parse_post_data()
+                data_post = parse_post_data(environ)
             try:
                 data_url = parse_qs(environ['ARGUMENT_STRING'])
             except KeyError:
@@ -358,7 +363,7 @@ def controller(a=None):
         return decorate
 
 
-class DBSession(WSGI):
+class DBSession(WSGImiddle):
     def __init__(self, controller, session_obj):
         self.controller = controller
         self.session_obj = session_obj
@@ -375,6 +380,9 @@ class DBSession(WSGI):
         finally:
             session.close()
         return output
+
+    def __str__(self):
+        return self.controller.__str__()
 
 
 def dbsession(session_obj):
