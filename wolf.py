@@ -40,6 +40,17 @@ loader = FileSystemLoader(searchpath=os.path.join(PROJECT_DIR, 'templates'))
 environment = Environment(loader=loader, trim_blocks=True, lstrip_blocks=True)
 
 
+class Link(object):
+    def __init__(self, text, url):
+        self.text = text
+        self.url = url
+    def __repr__(self):
+        if self.url:
+            return '<a href="{1}">{0}</a>'.format(self.text, self.url)
+        else:
+            return '<a>{0}</a>'.format(self.text)
+
+
 def default_error_handler(environ, start_response, status):
     output = 'E R R O R'
     output = output.encode('utf-8')
@@ -92,6 +103,7 @@ class Router(WSGImiddle):
             environ['SCRIPT_NAME'] += environ['PATH_INFO'][:index]
             environ['PATH_INFO'] = environ['PATH_INFO'][index:]
             route = self.routes[m.lastindex - 1][1]
+            environ['LINKS'] = [Link(r[2], None if r==self.routes[m.lastindex - 1] else environ['SCRIPT_NAME'] + r[0]) for r in self.routes if r[2]]
             if len(m.groupdict()) > 0:
                 try:
                     d = parse_qs(environ['ARGUMENT_STRING'])
@@ -111,10 +123,10 @@ class Router(WSGImiddle):
         else:
             return error_handler(environ, start_response, '404 Not Found')
 
-    def append(self, app, url, methods=['GET']):
+    def append(self, app, url, methods=['GET'], name=None):
         route = next((i for i in self.routes if i[0] == url), None)
         if route is None:
-            route = (url, {})
+            route = (url, {}, name)
             patt = re.compile('({0})'.format(route[0]))
             for _ in xrange(patt.groups):
                 self.routes.append(route)
@@ -132,21 +144,21 @@ class Router(WSGImiddle):
             rl = r
         self.pattern = re.compile('|'.join(routes))
 
-    def route(self, url, methods=['GET']):
+    def route(self, url, methods=['GET'], name=None):
         assert isinstance(url, basestring), "route decorator needs url parameter"
 
         def decorate(function):
-            self.append(function, url, methods)
+            self.append(function, url, methods, name)
             return function
 
         return decorate
 
-    def __str__(self):
+    def __repr__(self):
         ret = []
         for r in self.routes:
             for m, ro in r[1].iteritems():
                 if isinstance(ro, WSGImiddle):
-                    for rr in ro.__str__().split("\n"):
+                    for rr in ro.__repr__().split("\n"):
                         ret.append(r[0] + rr)
                 else:
                     ret.append(r[0] + " " + m)
@@ -381,8 +393,8 @@ class DBSession(WSGImiddle):
             session.close()
         return output
 
-    def __str__(self):
-        return self.controller.__str__()
+    def __repr__(self):
+        return self.controller.__repr__()
 
 
 def dbsession(session_obj):
@@ -404,12 +416,6 @@ def dbsession(session_obj):
         return controller
 
     return decorate
-
-
-class Link(object):
-    def __init__(self, text, url):
-        self.text = text
-        self.url = url
 
 
 class Paging(object):
