@@ -36,9 +36,13 @@ and returns
 """
 
 PROJECT_DIR = os.path.dirname(os.path.realpath(inspect.getfile(sys._getframe(2))))
-loader = FileSystemLoader(searchpath=os.path.join(PROJECT_DIR, 'templates'))
-environment = Environment(loader=loader, trim_blocks=True, lstrip_blocks=True)
 
+def template_environment(folder):
+    global environment
+    loader = FileSystemLoader(searchpath=os.path.join(PROJECT_DIR, folder))
+    environment = Environment(loader=loader, trim_blocks=True, lstrip_blocks=True)
+
+template_environment('')
 
 class Link(object):
     def __init__(self, text, url):
@@ -81,6 +85,14 @@ class WSGImiddle(WSGI):
     pass
 
 
+def rel_link(url):
+    ret = url.rstrip('$')
+    if ret == '/':
+        ret = './'
+    else:
+        ret = ret.lstrip('/')
+    return ret
+
 class Router(WSGImiddle):
     def __init__(self, *args):
         self.routes = []
@@ -100,10 +112,17 @@ class Router(WSGImiddle):
             else:
                 if environ['PATH_INFO'][index - 1] == '/':
                     index -= 1
-            environ['SCRIPT_NAME'] += environ['PATH_INFO'][:index]
+            followed = environ['PATH_INFO'][:index]
+            environ['SCRIPT_NAME'] += followed
             environ['PATH_INFO'] = environ['PATH_INFO'][index:]
-            route = self.routes[m.lastindex - 1][1]
-            environ['LINKS'] = [Link(r[2], None if r==self.routes[m.lastindex - 1] else environ['SCRIPT_NAME'] + r[0]) for r in self.routes if r[2]]
+            route = self.routes[m.lastindex - 1]
+            # environ['LINKS'] = [Link(r[2], None if r==route else environ['SCRIPT_NAME'] + r[0].rstrip('$')) for r in self.routes if r[2]]
+            environ['LINKS'] = [Link(r[2], None if r == route else rel_link(r[0])) for r in self.routes if r[2]]
+            breadcrumb = Link(route[2], followed)
+            try:
+                environ['BREADCRUMBS'].append(breadcrumb)
+            except KeyError:
+                environ['BREADCRUMBS'] = [breadcrumb]
             if len(m.groupdict()) > 0:
                 try:
                     d = parse_qs(environ['ARGUMENT_STRING'])
@@ -112,7 +131,7 @@ class Router(WSGImiddle):
                 d.update((k, v) for k, v in m.groupdict().iteritems() if v is not None)
                 environ['ARGUMENT_STRING'] = urlencode(d, True)
             try:
-                controller = route[environ['REQUEST_METHOD']]
+                controller = route[1][environ['REQUEST_METHOD']]
             except KeyError:
                 return error_handler(environ, start_response, '405 Method Not Allowed')
             output = controller(environ, start_response)
@@ -248,7 +267,7 @@ class Response(WSGI):
         start_response(self._status, self._headers.items())
         return [self._output]
 
-
+#TODO replace Redirect with Response
 class Redirect(WSGI):
     def __init__(self, url, status='301 Moved Permanently', headers=None):
         self.url = url
