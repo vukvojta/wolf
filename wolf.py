@@ -5,6 +5,7 @@ import os
 import sys
 import re
 import inspect
+from collections import defaultdict
 from functools import wraps
 from urlparse import parse_qs
 from urllib import urlencode
@@ -37,17 +38,21 @@ and returns
 
 PROJECT_DIR = os.path.dirname(os.path.realpath(inspect.getfile(sys._getframe(2))))
 
+
 def template_environment(folder):
     global environment
     loader = FileSystemLoader(searchpath=os.path.join(PROJECT_DIR, folder))
     environment = Environment(loader=loader, trim_blocks=True, lstrip_blocks=True)
 
+
 template_environment('')
+
 
 class Link(object):
     def __init__(self, text, url):
         self.text = text
         self.url = url
+
     def __repr__(self):
         if self.url:
             return '<a href="{1}">{0}</a>'.format(self.text, self.url)
@@ -93,6 +98,21 @@ def rel_link(url):
         ret = ret.lstrip('/')
     return ret
 
+
+def extract_name(str):
+    return str[:str.find('__')]
+
+
+def redirect_relative(environ, start_response):
+    status = '301 Moved Permanently'
+    headers = {'Content-Type': 'text/plain;charset=UTF-8'}
+    headers['Location'] = environ['SCRIPT_NAME'] + '/'
+    output = 'REDIRECT'
+    headers['Content-Length'] = str(len(output))
+    start_response(status, headers.items())
+    return [output]
+
+
 class Router(WSGImiddle):
     def __init__(self, *args):
         self.routes = []
@@ -128,7 +148,7 @@ class Router(WSGImiddle):
                     d = parse_qs(environ['ARGUMENT_STRING'])
                 except KeyError:
                     d = {}
-                d.update((k, v) for k, v in m.groupdict().iteritems() if v is not None)
+                d.update((extract_name(k), v) for k, v in m.groupdict().iteritems() if v is not None)
                 environ['ARGUMENT_STRING'] = urlencode(d, True)
             try:
                 controller = route[1][environ['REQUEST_METHOD']]
@@ -142,7 +162,7 @@ class Router(WSGImiddle):
         else:
             return error_handler(environ, start_response, '404 Not Found')
 
-    def append(self, app, url, methods=['GET'], name=None):
+    def _append(self, app, url, methods=['GET'], name=None):
         route = next((i for i in self.routes if i[0] == url), None)
         if route is None:
             route = (url, {}, name)
@@ -155,11 +175,30 @@ class Router(WSGImiddle):
                     'Route url={} method={}, {} is overriden with {}'.format(
                         route[0], method, route[1][method].__name__, app.__name__)
             route[1][method] = app
+
+    def append(self, app, url, methods=['GET'], name=None):
+        if url == '/':
+            self._append(app, url, methods, name)
+        elif len(url) > 1 and url[-1] == '/':
+            self._append(app, '/' + url, methods, name)
+            self._append(redirect_relative, '/' + url[:-1], methods, None)
+        else:
+            self._append(app, '/' + url + '$', methods, name)
         routes = []
         rl = None
+        patt = re.compile(r'\(\?P<(?P<name>[^>]+)\>')
+        names = defaultdict(lambda: 0)
         for r in self.routes:
             if r != rl:
-                routes.append('({0})'.format(r[0]))
+                last = 0
+                s = ''
+                for m in patt.finditer(r[0]):
+                    name = m.groups()[0]
+                    names[name] += 1
+                    s += r[0][last:m.start() + 4] + name + '__' + str(names[name])
+                    last = m.end() - 1
+                s += r[0][last:]
+                routes.append('({0})'.format(s))
             rl = r
         self.pattern = re.compile('|'.join(routes))
 
@@ -180,7 +219,7 @@ class Router(WSGImiddle):
                     for rr in ro.__repr__().split("\n"):
                         ret.append(r[0] + rr)
                 else:
-                    ret.append(r[0] + " " + m)
+                    ret.append(r[0] + " " + m + " " + str(type(ro)))
         return "\n".join(ret)
 
 
@@ -261,13 +300,14 @@ class Response(WSGI):
         return self
 
     def __call__(self, environ, start_response):
-        if 'Location' in self._headers:
+        if 'Location' in self._headers and environ['QUERY_STRING']:
             self._headers['Location'] += "?" + environ['QUERY_STRING']
         self._headers['Content-Length'] = str(len(self._output))
         start_response(self._status, self._headers.items())
         return [self._output]
 
-#TODO replace Redirect with Response
+
+# TODO replace Redirect with Response
 class Redirect(WSGI):
     def __init__(self, url, status='301 Moved Permanently', headers=None):
         self.url = url
