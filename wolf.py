@@ -55,9 +55,9 @@ class Link(object):
 
     def __repr__(self):
         if self.url:
-            return '<a href="{1}">{0}</a>'.format(self.text, self.url)
+            return u'<a href="{1}">{0}</a>'.format(self.text, self.url)
         else:
-            return '<a>{0}</a>'.format(self.text)
+            return u'<a>{0}</a>'.format(self.text)
 
 
 def default_error_handler(environ, start_response, status):
@@ -132,17 +132,16 @@ class Router(WSGImiddle):
             else:
                 if environ['PATH_INFO'][index - 1] == '/':
                     index -= 1
-            followed = environ['PATH_INFO'][:index]
-            environ['SCRIPT_NAME'] += followed
+            environ['SCRIPT_NAME'] += environ['PATH_INFO'][:index]
             environ['PATH_INFO'] = environ['PATH_INFO'][index:]
             route = self.routes[m.lastindex - 1]
-            # environ['LINKS'] = [Link(r[2], None if r==route else environ['SCRIPT_NAME'] + r[0].rstrip('$')) for r in self.routes if r[2]]
             environ['LINKS'] = [Link(r[2], None if r == route else rel_link(r[0])) for r in self.routes if r[2]]
-            breadcrumb = Link(route[2], followed)
-            try:
-                environ['BREADCRUMBS'].append(breadcrumb)
-            except KeyError:
-                environ['BREADCRUMBS'] = [breadcrumb]
+            if route[2] and index > 0:
+                breadcrumb = Link(route[2], environ['SCRIPT_NAME'])
+                try:
+                    environ['BREADCRUMBS'].append(breadcrumb)
+                except KeyError:
+                    environ['BREADCRUMBS'] = [breadcrumb]
             if len(m.groupdict()) > 0:
                 try:
                     d = parse_qs(environ['ARGUMENT_STRING'])
