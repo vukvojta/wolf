@@ -60,6 +60,14 @@ class Link(object):
             return u'<a>{0}</a>'.format(self.text)
 
 
+class Route(object):
+    def __init__(self, url, methods, names):
+        self.url = url
+        self.methods = methods
+        self.names = names
+
+
+
 def default_error_handler(environ, start_response, status):
     output = 'E R R O R'
     output = output.encode('utf-8')
@@ -135,9 +143,9 @@ class Router(WSGImiddle):
             environ['SCRIPT_NAME'] += environ['PATH_INFO'][:index]
             environ['PATH_INFO'] = environ['PATH_INFO'][index:]
             route = self.routes[m.lastindex - 1]
-            environ['LINKS'] = [Link(r[2], None if r == route else rel_link(r[0])) for r in self.routes if r[2]]
-            if route[2] and index > 0:
-                breadcrumb = Link(route[2], environ['SCRIPT_NAME'])
+            environ['LINKS'] = [Link(r.names, None if r == route else rel_link(r.url)) for r in self.routes if r.names]
+            if route.names and index > 0:
+                breadcrumb = Link(route.names, environ['SCRIPT_NAME'])
                 try:
                     environ['BREADCRUMBS'].append(breadcrumb)
                 except KeyError:
@@ -150,9 +158,13 @@ class Router(WSGImiddle):
                 d.update((extract_name(k), v) for k, v in m.groupdict().iteritems() if v is not None)
                 environ['ARGUMENT_STRING'] = urlencode(d, True)
             try:
-                controller = route[1][environ['REQUEST_METHOD']]
+                controller = route.methods[environ['REQUEST_METHOD']]
             except KeyError:
                 return error_handler(environ, start_response, '405 Method Not Allowed')
+            try:
+                print controller.__name__
+            except AttributeError:
+                print controller.__class__.__name__
             output = controller(environ, start_response)
             if output is not None:
                 return output
@@ -161,28 +173,28 @@ class Router(WSGImiddle):
         else:
             return error_handler(environ, start_response, '404 Not Found')
 
-    def _append(self, app, url, methods=['GET'], name=None):
-        route = next((i for i in self.routes if i[0] == url), None)
+    def _append(self, app, url, methods=['GET'], names=None):
+        route = next((i for i in self.routes if i.url == url), None)
         if route is None:
-            route = (url, {}, name)
-            patt = re.compile('({0})'.format(route[0]))
+            route = Route(url, {}, names)
+            patt = re.compile('({0})'.format(route.url))
             for _ in xrange(patt.groups):
                 self.routes.append(route)
         for method in methods:
-            if method in route[1]:
+            if method in route.methods:
                 print >> sys.stderr, \
                     'Route url={} method={}, {} is overriden with {}'.format(
-                        route[0], method, route[1][method].__name__, app.__name__)
-            route[1][method] = app
+                        route.url, method, route.methods[method].__name__, app.__name__)
+            route.methods[method] = app
 
-    def append(self, app, url, methods=['GET'], name=None):
+    def append(self, app, url, methods=['GET'], names=None):
         if url == '/':
-            self._append(app, url, methods, name)
+            self._append(app, url, methods, names)
         elif len(url) > 1 and url[-1] == '/':
-            self._append(app, '/' + url, methods, name)
+            self._append(app, '/' + url, methods, names)
             self._append(redirect_relative, '/' + url[:-1], methods, None)
         else:
-            self._append(app, '/' + url + '$', methods, name)
+            self._append(app, '/' + url + '$', methods, names)
         routes = []
         rl = None
         patt = re.compile(r'\(\?P<(?P<name>[^>]+)\>')
@@ -191,21 +203,21 @@ class Router(WSGImiddle):
             if r != rl:
                 last = 0
                 s = ''
-                for m in patt.finditer(r[0]):
+                for m in patt.finditer(r.url):
                     name = m.groups()[0]
                     names[name] += 1
-                    s += r[0][last:m.start() + 4] + name + '__' + str(names[name])
+                    s += r.url[last:m.start() + 4] + name + '__' + str(names[name])
                     last = m.end() - 1
-                s += r[0][last:]
+                s += r.url[last:]
                 routes.append('({0})'.format(s))
             rl = r
         self.pattern = re.compile('|'.join(routes))
 
-    def route(self, url, methods=['GET'], name=None):
+    def route(self, url, methods=['GET'], names=None):
         assert isinstance(url, basestring), "route decorator needs url parameter"
 
         def decorate(function):
-            self.append(function, url, methods, name)
+            self.append(function, url, methods, names)
             return function
 
         return decorate
@@ -213,12 +225,12 @@ class Router(WSGImiddle):
     def __repr__(self):
         ret = []
         for r in self.routes:
-            for m, ro in r[1].iteritems():
+            for m, ro in r.methods.iteritems():
                 if isinstance(ro, WSGImiddle):
                     for rr in ro.__repr__().split("\n"):
-                        ret.append(r[0] + rr)
+                        ret.append(r.url + rr)
                 else:
-                    ret.append(r[0] + " " + m + " " + str(type(ro)))
+                    ret.append(r.url + " " + m + " " + str(type(ro)))
         return "\n".join(ret)
 
 
