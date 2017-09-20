@@ -267,11 +267,8 @@ def authorize(a=None):
                 return f(environ, start_response)
             except KeyError:
                 pass
-            return Redirect(
-                # '/login?location={}{}'.format(environ['SCRIPT_NAME'],
-                #                               environ['PATH_INFO']),
-                '/login',
-                '302 Found')(environ, start_response)
+            return Redirect('/login?location={}{}'.format(environ['SCRIPT_NAME'], environ['PATH_INFO']), '302 Found')(
+                environ, start_response)
             # 403 Forbidden
 
         return ctrl
