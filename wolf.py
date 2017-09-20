@@ -67,7 +67,6 @@ class Route(object):
         self.names = names
 
 
-
 def default_error_handler(environ, start_response, status):
     output = 'E R R O R'
     output = output.encode('utf-8')
@@ -108,6 +107,7 @@ def rel_link(url):
 
 
 def extract_name(str):
+    """ Return string up to double underline """
     return str[:str.find('__')]
 
 
@@ -119,6 +119,16 @@ def redirect_relative(environ, start_response):
     headers['Content-Length'] = str(len(output))
     start_response(status, headers.items())
     return [output]
+
+
+def add_argument_string(environ, dadd):
+    """ Append dictionary to envronment variable ARGUMENT STRING """
+    try:
+        d = parse_qs(environ['ARGUMENT_STRING'])
+    except KeyError:
+        d = {}
+    d.update((extract_name(k), v) for k, v in dadd.iteritems() if v is not None)
+    environ['ARGUMENT_STRING'] = urlencode(d, True)
 
 
 class Router(WSGImiddle):
@@ -151,12 +161,7 @@ class Router(WSGImiddle):
                 except KeyError:
                     environ['BREADCRUMBS'] = [breadcrumb]
             if len(m.groupdict()) > 0:
-                try:
-                    d = parse_qs(environ['ARGUMENT_STRING'])
-                except KeyError:
-                    d = {}
-                d.update((extract_name(k), v) for k, v in m.groupdict().iteritems() if v is not None)
-                environ['ARGUMENT_STRING'] = urlencode(d, True)
+                add_argument_string(environ, m.groupdict())
             try:
                 controller = route.methods[environ['REQUEST_METHOD']]
             except KeyError:
