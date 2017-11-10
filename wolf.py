@@ -500,7 +500,7 @@ class Paging(object):
         self.link = link
 
     def in_range(self):
-        return self.page >= 1 and self.page <= self.pages
+        return self.page >= 1 and self.page <= self.pages or self.pages == 0
 
     def limit(self):
         return self.perpage * (self.page - 1), self.perpage
@@ -520,9 +520,10 @@ class Paging(object):
             paging.append(self._linky(self.page))
         if self.page + 1 < self.pages:
             paging.append(self._linky(self.page + 1))
-        if self.page == self.pages - 3:
+        if self.page + 2 == self.pages - 1:
             paging.append(self._linky(self.page + 2))
-        if self.page < self.pages - 3:
+        if self.page + 2 < self.pages - 1:
             paging.append(Link('...', None))
-        paging.append(self._linky(self.pages))
+        if self.pages > 1:
+            paging.append(self._linky(self.pages))
         return paging
