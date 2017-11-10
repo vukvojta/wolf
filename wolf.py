@@ -11,6 +11,8 @@ from urlparse import parse_qs
 from urllib import urlencode
 from jinja2 import Environment, FileSystemLoader
 
+from auth import checkUserSession
+
 """
 error page
 debug report
@@ -67,7 +69,6 @@ class Route(object):
         self.names = names
 
 
-
 def default_error_handler(environ, start_response, status):
     output = 'E R R O R'
     output = output.encode('utf-8')
@@ -108,6 +109,7 @@ def rel_link(url):
 
 
 def extract_name(str):
+    """ Return string up to double underline """
     return str[:str.find('__')]
 
 
@@ -119,6 +121,16 @@ def redirect_relative(environ, start_response):
     headers['Content-Length'] = str(len(output))
     start_response(status, headers.items())
     return [output]
+
+
+def add_argument_string(environ, dadd):
+    """ Append dictionary to envronment variable ARGUMENT STRING """
+    try:
+        d = parse_qs(environ['ARGUMENT_STRING'])
+    except KeyError:
+        d = {}
+    d.update((extract_name(k), v) for k, v in dadd.iteritems() if v is not None)
+    environ['ARGUMENT_STRING'] = urlencode(d, True)
 
 
 class Router(WSGImiddle):
@@ -151,12 +163,7 @@ class Router(WSGImiddle):
                 except KeyError:
                     environ['BREADCRUMBS'] = [breadcrumb]
             if len(m.groupdict()) > 0:
-                try:
-                    d = parse_qs(environ['ARGUMENT_STRING'])
-                except KeyError:
-                    d = {}
-                d.update((extract_name(k), v) for k, v in m.groupdict().iteritems() if v is not None)
-                environ['ARGUMENT_STRING'] = urlencode(d, True)
+                add_argument_string(environ, m.groupdict())
             try:
                 controller = route.methods[environ['REQUEST_METHOD']]
             except KeyError:
@@ -216,9 +223,9 @@ class Router(WSGImiddle):
     def route(self, url, methods=['GET'], names=None):
         assert isinstance(url, basestring), "route decorator needs url parameter"
 
-        def decorate(function):
-            self.append(function, url, methods, names)
-            return function
+        def decorate(f):
+            self.append(f, url, methods, names)
+            return f
 
         return decorate
 
@@ -232,6 +239,44 @@ class Router(WSGImiddle):
                 else:
                     ret.append(r.url + " " + m + " " + str(type(ro)))
         return "\n".join(ret)
+
+
+def authenticate(a=None):
+    def decorate(f):
+        @wraps(f)
+        def ctrl(environ, start_response):
+            user = checkUserSession(environ)
+            if user:
+                environ['REMOTE_USER'] = user
+            return f(environ, start_response)
+
+        return ctrl
+
+    if callable(a):
+        return decorate(a)
+    else:
+        return decorate
+
+
+def authorize(a=None):
+    def decorate(f):
+        @wraps(f)
+        def ctrl(environ, start_response):
+            try:
+                environ['REMOTE_USER']
+                return f(environ, start_response)
+            except KeyError:
+                pass
+            return Redirect('/login?location={}{}'.format(environ['SCRIPT_NAME'], environ['PATH_INFO']), '302 Found')(
+                environ, start_response)
+            # 403 Forbidden
+
+        return ctrl
+
+    if callable(a):
+        return decorate(a)
+    else:
+        return decorate
 
 
 class Static(WSGI):
@@ -470,7 +515,7 @@ class DBSession(WSGImiddle):
 def dbsession(session_obj):
     def decorate(f):
         @wraps(f)
-        def controller(environ, start_response):
+        def ctrl(environ, start_response):
             session = session_obj()
             environ['DB_SESSION'] = session
             try:
@@ -483,7 +528,7 @@ def dbsession(session_obj):
                 session.close()
             return output
 
-        return controller
+        return ctrl
 
     return decorate
 
