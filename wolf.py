@@ -7,8 +7,7 @@ import re
 import inspect
 from collections import defaultdict
 from functools import wraps
-from urlparse import parse_qs
-from urllib import urlencode
+from urllib.parse import parse_qs, urlencode
 from jinja2 import Environment, FileSystemLoader
 
 from auth import checkUserSession
@@ -81,7 +80,7 @@ def default_error_handler(environ, start_response, status):
 def env(environ, start_response):
     """ Show environment variables """
     output = []
-    for key, value in environ.iteritems():
+    for key, value in environ.items():
         output.append('{0} = {1}'.format(key, value))
     output = "\n".join(output).encode('utf-8')
     start_response('200 OK', [('Content-type', 'text/plain;charset=UTF-8'),
@@ -117,9 +116,9 @@ def redirect_relative(environ, start_response):
     status = '301 Moved Permanently'
     headers = {'Content-Type': 'text/plain;charset=UTF-8'}
     headers['Location'] = environ['SCRIPT_NAME'] + '/'
-    output = 'REDIRECT'
+    output = 'REDIRECT'.encode('utf-8')
     headers['Content-Length'] = str(len(output))
-    start_response(status, headers.items())
+    start_response(status, list(headers.items()))
     return [output]
 
 
@@ -129,7 +128,7 @@ def add_argument_string(environ, dadd):
         d = parse_qs(environ['ARGUMENT_STRING'])
     except KeyError:
         d = {}
-    d.update((extract_name(k), v) for k, v in dadd.iteritems() if v is not None)
+    d.update((extract_name(k), v) for k, v in dadd.items() if v is not None)
     environ['ARGUMENT_STRING'] = urlencode(d, True)
 
 
@@ -169,9 +168,9 @@ class Router(WSGImiddle):
             except KeyError:
                 return error_handler(environ, start_response, '405 Method Not Allowed')
             try:
-                print controller.__name__
+                print(controller.__name__)
             except AttributeError:
-                print controller.__class__.__name__
+                print(controller.__class__.__name__)
             output = controller(environ, start_response)
             if output is not None:
                 return output
@@ -185,13 +184,13 @@ class Router(WSGImiddle):
         if route is None:
             route = Route(url, {}, names)
             patt = re.compile('({0})'.format(route.url))
-            for _ in xrange(patt.groups):
+            for _ in range(patt.groups):
                 self.routes.append(route)
         for method in methods:
             if method in route.methods:
-                print >> sys.stderr, \
-                    'Route url={} method={}, {} is overriden with {}'.format(
-                        route.url, method, route.methods[method].__name__, app.__name__)
+                print('Route url={} method={}, {} is overriden with {}'.format(
+                      route.url, method, route.methods[method].__name__, app.__name__),
+                      file=sys.stderr)
             route.methods[method] = app
 
     def append(self, app, url, methods=['GET'], names=None):
@@ -221,7 +220,7 @@ class Router(WSGImiddle):
         self.pattern = re.compile('|'.join(routes))
 
     def route(self, url, methods=['GET'], names=None):
-        assert isinstance(url, basestring), "route decorator needs url parameter"
+        assert isinstance(url, str), "route decorator needs url parameter"
 
         def decorate(f):
             self.append(f, url, methods, names)
@@ -232,7 +231,7 @@ class Router(WSGImiddle):
     def __repr__(self):
         ret = []
         for r in self.routes:
-            for m, ro in r.methods.iteritems():
+            for m, ro in r.methods.items():
                 if isinstance(ro, WSGImiddle):
                     for rr in ro.__repr__().split("\n"):
                         ret.append(r.url + rr)
@@ -359,7 +358,7 @@ class Response(WSGI):
         if 'Location' in self._headers and environ['QUERY_STRING']:
             self._headers['Location'] += "?" + environ['QUERY_STRING']
         self._headers['Content-Length'] = str(len(self._output))
-        start_response(self._status, self._headers.items())
+        start_response(self._status, list(self._headers.items()))
         return [self._output]
 
 
@@ -420,7 +419,8 @@ def parse_post_data(environ):
         request_body_size = int(environ.get('CONTENT_LENGTH', 0))
     except ValueError:
         request_body_size = 0
-    return parse_qs(environ['wsgi.input'].read(request_body_size))
+    data = environ['wsgi.input'].read(request_body_size)
+    return parse_qs(data.decode("utf-8"))
 
 
 def get_client_address(environ):
@@ -439,7 +439,7 @@ def controller(a=None):
         a, alternative content-type
     """
     content_type = 'text/plain;charset=UTF-8'
-    if isinstance(a, basestring):
+    if isinstance(a, str):
         content_type = a
 
     def decorate(f):
@@ -452,6 +452,8 @@ def controller(a=None):
             data_get = parse_qs(environ['QUERY_STRING'])
             if environ['REQUEST_METHOD'] == 'POST':
                 data_post = parse_post_data(environ)
+            else:
+                data_post = {}
             try:
                 data_url = parse_qs(environ['ARGUMENT_STRING'])
             except KeyError:
@@ -475,7 +477,7 @@ def controller(a=None):
             output = f(**args)
             if isinstance(output, WSGI):
                 return output(environ, start_response)
-            elif isinstance(output, basestring):
+            elif isinstance(output, str):
                 start_response('200 OK', [('Content-type', content_type),
                                           ('Content-Length', str(len(output)))])
                 return [output]

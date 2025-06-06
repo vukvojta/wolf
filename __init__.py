@@ -1,1 +1,1 @@
-from wolf import *
+from .wolf import *
